@@ -56,8 +56,13 @@ for r in root:
 
     address = False
     add = r.attrib["address"].replace("-", "")
+
+    # some sms conversations seem to have multiple recipients separated by a tilda
+    # I don't really know how to craft a signal group chat (although I do see a group table)
+    # So we're just going to grab one of the contacts in the group and make them the
+    # recipient ... sure wish the Signal database had some documentation ...
     if '~' in add:
-        for a in add.split("~"):
+        for a in sorted(add.split("~")):
             try:
                 address = contacts_by_number[a]
                 print("Coerced group of ", add, " to a single contact: ", a)
