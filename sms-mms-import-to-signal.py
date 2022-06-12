@@ -20,7 +20,7 @@ def get_contacts(cursor):
 
 def get_parts(r):
     rtn = []
-    print("GETTING PARTS:")
+    # print("GETTING PARTS:")
     for parts in r.findall("parts"):
         for part in parts.findall("part"):
             rtn.append(part)
@@ -29,7 +29,7 @@ def get_parts(r):
 
 def get_addrs(r):
     rtn = []
-    print("GETTING ADDRS:")
+    # print("GETTING ADDRS:")
     for addrs in r.findall("addrs"):
         for addr in addrs.findall("addr"):
             rtn.append(addr)
@@ -54,51 +54,65 @@ for r in root:
     if date_sent == 0 or date_sent == "0" or date_sent == "" or not date_sent:
         date_sent = r.attrib["date"]
 
-    try:
-        address = contacts_by_number[r.attrib["address"].replace("-", "")]
-    except KeyError:
-        print("SKIPPING ITEM BECAUSE NO ADDRESS: ", r)
+    address = False
+    add = r.attrib["address"].replace("-", "")
+    if '~' in add:
+        for a in add.split("~"):
+            try:
+                address = contacts_by_number[a]
+                print("Coerced group of ", add, " to a single contact: ", a)
+            except KeyError:
+                pass
+
+    if not address:
+        try:
+            address = contacts_by_number[add]
+        except KeyError:
+            pass
+
+    if not address:
+        print("\nSkipping ", r.tag, " because couldn't link address to a contact: ", r.attrib["address"])
+        print(r.items())
+        # sys.exit(0)
+        # cursor.execute("insert into recipient (phone, system_display_name) values (?, ?)", (r.attrib["address"],.....))
         continue
 
-    try:
-        if r.tag == "sms":
+    if r.tag == "sms":
 
-            # magic Signal numbers
-            typ = 10485783 if str(r.attrib["type"]) == "2" else 10485780
+        # magic Signal numbers
+        typ = 10485783 if str(r.attrib["type"]) == "2" else 10485780
 
-            row = (
-                address,
-                r.attrib["date"],
-                date_sent,
-                1,  # "read"
-                -1,  # "status"
-                int(typ),
-                r.attrib["body"],
-            )
-            smses.append(row)
-        elif r.tag == "mms":
+        row = (
+            address,
+            r.attrib["date"],
+            date_sent,
+            1,  # "read"
+            -1,  # "status"
+            int(typ),
+            r.attrib["body"],
+        )
+        smses.append(row)
+    elif r.tag == "mms":
 
-            # magic Signal numbers, 10485783 for messages we've sent, 10485780 for messages we've received
-            typ = 10485783 if str(r.attrib["msg_box"]) == "2" else 10485780
+        # magic Signal numbers, 10485783 for messages we've sent, 10485780 for messages we've received
+        typ = 10485783 if str(r.attrib["msg_box"]) == "2" else 10485780
 
-            row = (
-                address,
-                r.attrib["date"],
-                date_sent,
-                1,  # "read"
-                -1,  # "status",
-                typ,
-                r.attrib.get("body", ""),
-                get_parts(r),
-                get_addrs(r),
-            )
-            mmses.append(row)
-    except Exception as e:
-        print("SKIPPING MESSAGE:", r, " because: ", e)
-        continue
+        row = (
+            address,
+            r.attrib["date"],
+            date_sent,
+            1,  # "read"
+            -1,  # "status",
+            typ,
+            r.attrib.get("body", ""),
+            get_parts(r),
+            get_addrs(r),
+        )
+        mmses.append(row)
 
 print("Found ", len(smses), "sms")
 print("Found ", len(mmses), "mms")
+time.sleep(3)
 
 
 def get_or_make_thread(cursor, r, doUpdate=False):
@@ -138,7 +152,11 @@ for r in mmses:
         m_type = 132  # 132 == we received
 
     print("Writing MMS: ", r)
-    q = "INSERT INTO mms (thread_id, date, date_received, date_server, msg_box, read, body, part_count, address, delivery_receipt_count, read_receipt_count, viewed_receipt_count, m_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    q = "INSERT INTO mms ( \
+           thread_id, date, date_received, date_server, msg_box, read, body, part_count, address, \
+           delivery_receipt_count, read_receipt_count, viewed_receipt_count, m_type) \
+         VALUES \
+           (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     cursor.execute(
         q,
@@ -183,8 +201,9 @@ for r in mmses:
                     mms_id,
                     seq,
                     part.attrib.get("ct"),
-                    part.attrib.get("name"),
-                    part.attrib.get("chset"),
+                    file_name,
+                    file_name,
+                    # part.attrib.get("chset"),
                     data_size,
                     file_name,
                     unique_id,
@@ -228,4 +247,5 @@ for r in smses:
     conn.commit()
 
 
+conn.commit()
 cursor.close()
