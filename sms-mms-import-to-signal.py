@@ -4,7 +4,9 @@ import os
 import sqlite3
 import base64
 import time
+import logging
 
+logging.basicConfig(filename='signalsmsmmsimport.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
 
 def get_contacts(cursor):
     cursor.execute("select _id, phone, system_display_name from recipient")
@@ -49,13 +51,18 @@ mmses = []
 contacts_by_number = get_contacts(cursor)
 
 for r in root:
-
-    date_sent = r.attrib["date_sent"]
-    if date_sent == 0 or date_sent == "0" or date_sent == "" or not date_sent:
+    if "date_sent" in r.attrib:
+        date_sent = r.attrib["date_sent"]
+        if date_sent in ['0',0,''] and "date" in r.attrib:
+            date_sent = r.attrib["date"]
+    else:
         date_sent = r.attrib["date"]
+    #date_sent = r.attrib.get("date_sent")
+    #if date_sent == 0 or date_sent == "0" or date_sent == "" or not date_sent:
+        #date_sent = r.attrib.get("date")
 
     address = False
-    add = r.attrib["address"].replace("-", "")
+    add = r.attrib["address"].replace("-", "").replace("+61","0")
 
     # some sms conversations seem to have multiple recipients separated by a tilda
     # I don't really know how to craft a signal group chat (although I do see a group table)
@@ -65,7 +72,7 @@ for r in root:
         for a in sorted(add.split("~")):
             try:
                 address = contacts_by_number[a]
-                print("Coerced group of ", add, " to a single contact: ", a)
+                logging.info(f"Coerced group of {add} to a single contact: {a}")
             except KeyError:
                 pass
 
@@ -76,8 +83,8 @@ for r in root:
             pass
 
     if not address:
-        print("\nSkipping ", r.tag, " because couldn't link address to a contact: ", r.attrib["address"])
-        print(r.items())
+        logging.warning(f"Skipping {r.tag} because couldn't link address to a contact: {r.attrib['address']}")
+        #logging.warning(r.items())
         # sys.exit(0)
         # cursor.execute("insert into recipient (phone, system_display_name) values (?, ?)", (r.attrib["address"],.....))
         continue
@@ -101,7 +108,12 @@ for r in root:
 
         # magic Signal numbers, 10485783 for messages we've sent, 10485780 for messages we've received
         typ = 10485783 if str(r.attrib["msg_box"]) == "2" else 10485780
-
+        addrs = get_addrs(r)
+        parts = get_parts(r)
+        text = ""
+        for text_part in parts:
+            if text_part.get("seq") == '0':
+                text = text_part.get("text")
         row = (
             address,
             r.attrib["date"],
@@ -109,14 +121,14 @@ for r in root:
             1,  # "read"
             -1,  # "status",
             typ,
-            r.attrib.get("body", ""),
-            get_parts(r),
-            get_addrs(r),
+            r.attrib.get("body", text),
+            parts,
+            addrs,
         )
         mmses.append(row)
 
-print("Found ", len(smses), "sms")
-print("Found ", len(mmses), "mms")
+logging.info(f"Found {str(len(smses))} sms")
+logging.info(f"Found {str(len(mmses))} mms")
 time.sleep(3)
 
 
@@ -155,8 +167,7 @@ for r in mmses:
     m_type = 128  # 128 == we sent
     if r[5] == 10485780:
         m_type = 132  # 132 == we received
-
-    print("Writing MMS: ", r)
+    logging.info(f"Writing MMS: {r}")
     q = "INSERT INTO mms ( \
            thread_id, date, date_received, date_server, msg_box, read, body, part_count, address, \
            delivery_receipt_count, read_receipt_count, viewed_receipt_count, m_type) \
@@ -174,12 +185,12 @@ for r in mmses:
     mms_id = rows[0][0]
 
     seq = 0
-    print(f"PARTS found {len(r[7])} parts")
+    logging.info(f"PARTS found {len(r[7])} parts")
     for part in r[7]:
         # skip smil - not sure if Signal undestand SMIL formatting
         if int(part.attrib.get("seq", 0)) != -1 and part.attrib.get("data"):
             seq += 1
-            print(f"  Working on mms {mms_id} part number {seq}")
+            logging.info(f"  Working on mms {mms_id} part number {seq}")
             data = base64.b64decode(part.attrib["data"])
             data_size = len(data)
             file_name = part.attrib.get("name", part.attrib.get("cl", ""))
@@ -195,7 +206,7 @@ for r in mmses:
             )
 
             unique_id = int(time.time() * 1000)
-            print(f"    -> file: {file_name} is {data_size} bytes")
+            logging.info(f"    -> file: {file_name} is {data_size} bytes")
 
             props = '{"skipTransform":true,"videoTrim":false,"videoTrimStartTimeUs":0,"videoTrimEndTimeUs":0,"sentMediaQuality":0,"videoEdited":false}'
 
@@ -226,14 +237,14 @@ for r in mmses:
             fname = f"{dest}/Attachment_{part_id}_{unique_id}.bin"
             fname2 = f"{dest}/Attachment_{part_id}_{unique_id}.sbf"
             with open(fname, "wb") as f:
-                print(f"      * writing: {fname}")
+                logging.info(f"      * writing: {fname}")
                 f.write(data)
 
             fdesc = f"ROWID:uint64:{part_id}\n\
 ATTACHMENTID:uint64:{unique_id}\n\
 LENGTH:uint32:{data_size}"
             with open(fname2, "w") as f:
-                print(f"      * writing: {fname2}")
+                logging.info(f"      * writing: {fname2}")
                 f.write(fdesc)
 
 
@@ -244,7 +255,7 @@ for r in smses:
     r = list(r)
     r.insert(0, thread_id)
     r = tuple(r)
-    print("Writing SMS: ", r)
+    logging.info(f"Writing SMS: {r}")
     cursor.execute(
         "INSERT INTO sms (thread_id, address, date, date_sent, read, status, type, body, delivery_receipt_count, read_receipt_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)",
         r,
