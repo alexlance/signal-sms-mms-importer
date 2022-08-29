@@ -44,6 +44,16 @@ def get_contacts(cursor):
             contacts_by_number[c[1].replace("+61", "0").replace("-", "")] = c[0]
     return contacts_by_number
 
+def get_groups(cursor):
+    cursor.execute("select _id, group_id, recipient_id, members from group")
+    groups = cursor.fetchall()
+    groups_by_number = {}
+    for g in groups:
+        groups_by_number['_id'] = g[0]
+        groups_by_number['group_id'] = g[1]
+        groups_by_number['recipient_id'] = g[2]
+        groups_by_number['members'] = g[3]
+    return groups_by_number
 
 def get_parts(r):
     rtn = []
@@ -125,7 +135,7 @@ for r in root:
         smses.append(row)
     elif r.tag == "mms":
         # magic mms numbers, 128 for messages we've sent, 132 for messages we've received
-        # for m_type, 87 is sent inc text, 23 is sent no text, 20 is received with or without text
+        # for msg_box, 87 is sent inc text, 23 is sent no text, 20 is received with or without text
         parts = get_parts(r)
         text = ""
         for text_part in parts:
@@ -144,14 +154,36 @@ for r in root:
         row['body'] = r.attrib.get("body", text)
         if row['typ'] == 128:
             if row['body'] == '':
-                row['m_typ'] = 23
+                row['msg_box'] = 23
             else:
-                row['m_typ'] = 87
+                row['msg_box'] = 87
         elif row['typ'] == 132:
-            row['m_typ'] = 20
+            row['msg_box'] = 20
         row['parts'] = parts
         row['addrs'] = addrs
-        mmses.append(row)
+        if len(add_list) and row['typ'] == 128:
+            for item in row['add_list']:
+                rowwy = {}
+                rowwy['add_list'] = add_list
+                rowwy['address'] = item
+                rowwy['date'] = r.attrib["date"]
+                rowwy['date_sent'] = date_sent
+                rowwy['read'] = 1  # "read"
+                rowwy['status'] = -1  # "status",
+                rowwy['typ'] = 128 if str(r.attrib["msg_box"]) == "2" else 132
+                rowwy['body'] = r.attrib.get("body", text)
+                if rowwy['typ'] == 128:
+                    if rowwy['body'] == '':
+                        rowwy['msg_box'] = 23
+                    else:
+                        rowwy['msg_box'] = 87
+                elif rowwy['typ'] == 132:
+                    rowwy['msg_box'] = 20
+                rowwy['parts'] = parts
+                rowwy['addrs'] = addrs
+                mmses.append(rowwy)
+        else:
+            mmses.append(row)
 
 logging.info(f"Found {str(len(smses))} sms")
 logging.info(f"Found {str(len(mmses))} mms")
@@ -225,7 +257,7 @@ for r in mmses:
            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     cursor.execute(
         q,
-        (thread_id, r['date'], r['date_sent'], r['date'], r['typ'], 1, r['body'], part_count, r['address'], 1, 1, 1, r['m_typ']),
+        (thread_id, r['date'], r['date_sent'], -1, r['msg_box'], 1, r['body'], part_count, r['address'], 1, 1, 1, r['typ']),
     )
     #conn.commit()
     cursor.execute("select max(_id) as mms_id from mms")
