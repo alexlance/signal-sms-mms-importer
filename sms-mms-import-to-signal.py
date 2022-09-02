@@ -57,11 +57,14 @@ def get_groups(cursor):
 
 def get_parts(r):
     rtn = []
+    part_length = 0
     # print("GETTING PARTS:")
     for parts in r.findall("parts"):
         for part in parts.findall("part"):
+            if int(part.attrib.get("seq", 0)) != -1 and part.attrib.get("data"):
+                part_length = part_length + 1
             rtn.append(part)
-    return rtn
+    return part_length, rtn
 
 
 def get_addrs(r):
@@ -129,20 +132,21 @@ for r in root:
         row['date'] = r.attrib["date"]
         row['date_sent'] = date_sent
         row['read'] = 1  # "read"
-        row['status'] = -1  # "status"
         row['type'] = 87 if str(r.attrib["type"]) == "2" else 20
+        row['reply_path_present'] = None if str(r.attrib["type"]) == "2" else 0
         row['body'] = r.attrib["body"]
+        row['subscription_id'] = -1 if str(r.attrib["type"]) == "2" else 1
         smses.append(row)
     elif r.tag == "mms":
         # magic mms numbers, 128 for messages we've sent, 132 for messages we've received
         # for msg_box, 87 is sent inc text, 23 is sent no text, 20 is received with or without text
-        parts = get_parts(r)
+        part_length, parts = get_parts(r)
         text = ""
         for text_part in parts:
             if text_part.get("seq") == '0':
                 text = text_part.get("text","")
                 if text == "null":
-                    text =""
+                    text = None
         row = {}
         row['add_list'] = add_list
         row['address'] = address
@@ -151,6 +155,8 @@ for r in root:
         row['read'] = 1  # "read"
         row['status'] = -1  # "status",
         row['typ'] = 128 if str(r.attrib["msg_box"]) == "2" else 132
+        row['subscription_id'] = -1 if str(r.attrib["msg_box"]) == "2" else 1
+        row['st'] = None if str(r.attrib["msg_box"]) == "2" else 1
         row['body'] = r.attrib.get("body", text)
         if row['typ'] == 128:
             if row['body'] == '':
@@ -160,28 +166,12 @@ for r in root:
         elif row['typ'] == 132:
             row['msg_box'] = 20
         row['parts'] = parts
+        row['part_length'] = part_length
         row['addrs'] = addrs
         if len(add_list) and row['typ'] == 128:
             for item in row['add_list']:
-                rowwy = {}
-                rowwy['add_list'] = add_list
-                rowwy['address'] = item
-                rowwy['date'] = r.attrib["date"]
-                rowwy['date_sent'] = date_sent
-                rowwy['read'] = 1  # "read"
-                rowwy['status'] = -1  # "status",
-                rowwy['typ'] = 128 if str(r.attrib["msg_box"]) == "2" else 132
-                rowwy['body'] = r.attrib.get("body", text)
-                if rowwy['typ'] == 128:
-                    if rowwy['body'] == '':
-                        rowwy['msg_box'] = 23
-                    else:
-                        rowwy['msg_box'] = 87
-                elif rowwy['typ'] == 132:
-                    rowwy['msg_box'] = 20
-                rowwy['parts'] = parts
-                rowwy['addrs'] = addrs
-                mmses.append(rowwy)
+                row['address'] = item
+                mmses.append(row)
         else:
             mmses.append(row)
 
@@ -200,7 +190,7 @@ def get_or_make_thread(cursor, r):
     if not thread_id:
         # print("Creating new thread:", r)
         cursor.execute(
-            "insert into thread (date, thread_recipient_id, message_count, snippet) VALUES (?, ?, ?, ?)",
+            "insert into thread (date, thread_recipient_id, message_count, snippet) values (?, ?, ?, ?)",
             (r['date'], r['address'], 1, str(r['body'])[0:100]),
         )
         cursor.execute("select max(_id) as thread_id from thread")
@@ -209,9 +199,10 @@ def get_or_make_thread(cursor, r):
             thread_id = rows[0]
     return thread_id
 
+i = 0
+
 if args.merge:
     logging.info("deleting existing mms to replace")
-    i = 0
     for r in mmses:
         if not len(r.get('add_list')):
             r['add_list'].append(r.get('address'))
@@ -248,16 +239,14 @@ logging.info("inserting mms")
 
 for r in mmses:
     thread_id = get_or_make_thread(cursor, r)
-    part_count = len(r['parts'])
     logging.debug(f"Writing MMS: {r}")
-    q = "INSERT INTO mms ( \
-           thread_id, date, date_received, date_server, msg_box, read, body, part_count, address, \
-           delivery_receipt_count, read_receipt_count, viewed_receipt_count, m_type) \
-         VALUES \
-           (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    q = "insert into mms ( \
+           thread_id, date, date_received, msg_box, read, body, part_count, address, \
+           m_type, subscription_id, st) \
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     cursor.execute(
         q,
-        (thread_id, r['date'], r['date_sent'], -1, r['msg_box'], 1, r['body'], part_count, r['address'], 1, 1, 1, r['typ']),
+        (thread_id, r['date'], r['date_sent'], r['msg_box'], 1, r['body'], r['part_length'], r['address'], r['typ'], r['subscription_id'], r['st']),
     )
     #conn.commit()
     cursor.execute("select max(_id) as mms_id from mms")
@@ -284,8 +273,9 @@ for r in mmses:
             )
             unique_id = int(time.time() * 1000)
             logging.debug(f"    -> file: {file_name} is {data_size} bytes")
+            caption = part.attrib.get("text", "")
             props = '{"skipTransform":true,"videoTrim":false,"videoTrimStartTimeUs":0,"videoTrimEndTimeUs":0,"sentMediaQuality":0,"videoEdited":false}'
-            q = "INSERT INTO part (mid, seq, ct, name, chset, data_size, file_name, unique_id, caption, transform_properties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            q = "insert into part (mid, seq, ct, name, chset, data_size, file_name, unique_id, caption, transform_properties) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             cursor.execute(
                 q,
                 (
@@ -298,7 +288,7 @@ for r in mmses:
                     data_size,
                     file_name,
                     unique_id,
-                    part.attrib.get("text", ""),
+                    None if caption in ['null',''] else caption,
                     props
                 ),
             )
@@ -343,9 +333,9 @@ for r in smses:
     r['thread_id'] = get_or_make_thread(cursor=cursor, r=r)
     logging.debug(f"Writing SMS: {r}")
     cursor.execute(
-        """INSERT INTO sms (thread_id, address, date, date_sent, read, status, type, body, delivery_receipt_count, read_receipt_count)
-        VALUES (:thread_id, :address, :date, :date_sent, :read, :status, :type, :body, 1, 1)""",
-        (r['thread_id'], r['address'], r['date'], r['date_sent'], r['read'], r['status'], r['type'], r['body'])
+        """insert into sms (thread_id, address, date, date_sent, read, type, body)
+        values (:thread_id, :address, :date, :date_sent, :read, :type, :body)""",
+        (r['thread_id'], r['address'], r['date'], r['date_sent'], r['read'], r['type'], r['body'])
     )
     i = i + 1
     if i % 1000 == 0:
