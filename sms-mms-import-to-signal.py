@@ -22,14 +22,6 @@ output = args.output if args.output is not None else args.args[1]
 
 logging.basicConfig(filename='signalsmsmmsimport.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG if args.verbose else logging.INFO)
 
-#todo:
-# finish mms/rcs message import correction
-# make them dictionaries instead of lists where possible (readability/performance)
-# make a reliable equivalent to oracle merge? delete/add? update? optional arguments/yesno prompts to ask about the 'delete equivalent things' prcoess?
-# create recipient when not exist?
-# have mms/sms appear as such in signal, not as signal messages
-# handle group things
-
 logging.info(f"input file is '{input}', output file is '{output}'")
 
 def get_contacts(cursor):
@@ -57,7 +49,7 @@ def get_groups(cursor):
 def get_parts(r):
     rtn = []
     part_length = 0
-    # print("GETTING PARTS:")
+    logging.debug("GETTING PARTS:")
     for parts in r.findall("parts"):
         for part in parts.findall("part"):
             if int(part.attrib.get("seq", 0)) != -1 and part.attrib.get("data"):
@@ -70,7 +62,7 @@ def get_addrs(r):
     #this is a list of addresses, type 151 is you, type 130 are other recipients, type 137 is the sender. this will be useful for groups (need to figure how signal marks the sender in a group) also usefu
     #this returned list can be used to allocate messages to the sender of a group
     rtn = []
-    # print("GETTING ADDRS:")
+    logging.debug("GETTING ADDRS:")
     for addrs in r.findall("addrs"):
         for addr in addrs.findall("addr"):
             rtn.append(addr)
@@ -91,7 +83,7 @@ def get_or_make_thread(cursor, r):
     if len(rows):
         thread_id = rows[0][0]
     if not thread_id:
-        # print("Creating new thread:", r)
+        logging.debug(f"Creating new thread: {r}")
         cursor.execute(
             "insert into thread (date, thread_recipient_id, message_count, snippet) values (?, ?, ?, ?)",
             (r['date'], r['address'], 1, str(r['body'])[0:100]),
@@ -203,8 +195,8 @@ insert_sms_query = """insert into sms (thread_id, address, date, date_sent, read
         values (:thread_id, :address, :date, :date_sent, :read, :type, :body, :receipt_timestamp)"""
 insert_mms_query = """insert into mms (thread_id, date, date_received, msg_box, read, body, part_count, address, m_type, subscription_id, st) 
             values (:thread_id, :date, :date_received, :msg_box, :read, :body, :part_count, :address, :m_type, :subscription_id, :st)"""
-insert_part_query = """insert into part (mid, seq, ct, data_size, file_name, unique_id, caption, transform_properties)
-            values (:mid, :seq, :ct, :data_size, :file_name, :unique_id, :caption, :transform_properties)"""
+insert_part_query = """insert into part (mid, seq, ct, pending_push, data_size, file_name, unique_id, caption, transform_properties)
+            values (:mid, :seq, :ct, :pending_push, :data_size, :file_name, :unique_id, :caption, :transform_properties)"""
 
 i = 0
 
@@ -285,6 +277,7 @@ for r in mmses:
                     mms_id,
                     seq,
                     part.attrib.get("ct"),
+                    0,
                     data_size,
                     file_name,
                     unique_id,
