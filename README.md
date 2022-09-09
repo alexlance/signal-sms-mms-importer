@@ -80,3 +80,20 @@ c) The Signal PIN number that you may have setup
 * Feel free to shout out with any issues problems in github issues
 * Make sure to go and give signalbackup-tools some kudos as they do most of the heavy lifting
 * Wonder if we could move whatsapp messages using a similar procedure... ?
+
+## Fork additions
+* Adapted import to properly handle RCS messages sent/received
+* Imported SMS/MMS look like SMS/MMS in signal, rather than signal messages
+* Added 'add recipient' function, to import all SMS/MMS rather than only those with contacts
+* Modified from tuples to dictionaries for readability
+* Switched from print to logger for capturing logs/outputs
+* Modified thread count logic to include SMS & MMS, aggregated at the end
+* Added merge function, to reprocess the import of a previously imported SMS/MMS XML backup
+* Added arguments for input & output, but maintained positional for compatability
+* Added merge & verbose arguments for finer control
+* Various other readability, performance, sql updates to better mimic how Signal loads SMS/MMS into it's databases
+
+### To do
+* Maybe import group/bulk texts as groups. Do we care? MMS group texts don't really function like a group chat in the real world from my experience
+* Currently, imported audio messages don't play - have seen some comments on signalbackup-tools that indicate it may not be to do with our import?
+* the thread snippet sometimes shows an old message - might be worth adding something at the end to deal with that?
