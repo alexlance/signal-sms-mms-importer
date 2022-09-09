@@ -76,7 +76,7 @@ def get_addrs(r):
             rtn.append(addr)
     return rtn
 
-def add_recipient(add):
+def add_recipient(add, cursor):
     global contacts_by_number
     cursor.execute(f"""insert into recipient (phone, default_subscription_id, registered) values ("{add}", 1, 2)""")
     conn.commit()
@@ -118,7 +118,7 @@ contacts_by_number = get_contacts(cursor)
 
 for r in root:
     date_sent = r.attrib.get("date_sent","")
-    if date_sent in [0, "0", ""]:
+    if date_sent in [0, "0", ""] or len(date_sent) < 13:
         date_sent = r.attrib.get("date","")
     addrs = get_addrs(r)
     address = False
@@ -129,22 +129,23 @@ for r in root:
             try:
                 address = contacts_by_number[a]
             except KeyError:
-                address = add_recipient(a)
+                address = add_recipient(a, cursor)
             finally:
                 add_list.append(address)
         else:
             for addr in addrs:
                 if addr.items()[1][1] == '137':
                     address = contacts_by_number[addr.items()[0][1].replace("-", "").replace("+61","0")]
+        add_list = [*set(add_list)]
     if not address:
         try:
             address = contacts_by_number[add]
         except KeyError:
-            address = add_recipient(add)
+            address = add_recipient(add, cursor)
+    row = {}
     if r.tag == "sms":
         #sms sent is type 87, sms received is type 20
-        row = {}
-        row['add_list'] = [*set(add_list)]
+        row['add_list'] = add_list
         row['address'] = address
         row['date'] = r.attrib["date"]
         row['date_sent'] = date_sent
@@ -166,8 +167,7 @@ for r in root:
                     text = None
                 if text:
                     break
-        row = {}
-        row['add_list'] = [*set(add_list)]
+        row['add_list'] = add_list
         row['address'] = address
         row['date'] = r.attrib["date"]
         row['date_sent'] = date_sent
@@ -187,10 +187,10 @@ for r in root:
         row['parts'] = parts
         row['part_length'] = part_length
         row['addrs'] = addrs
-        if len(add_list) and row['type'] == 128:
-            for item in row['add_list']:
-                row['address'] = item
-                mmses.append(row)
+        if len(row['add_list']) and row['type'] == 128:
+            for add in row['add_list']:
+                row['address'] = add
+                mmses.append(row.copy())
         else:
             mmses.append(row)
 
@@ -199,8 +199,8 @@ logging.info(f"Found {str(len(mmses))} mms")
 
 time.sleep(3)
 
-insert_sms_query = """insert into sms (thread_id, address, date, date_sent, read, type, body, received_timestamp)
-        values (:thread_id, :address, :date, :date_sent, :read, :type, :body, :received_timestamp)"""
+insert_sms_query = """insert into sms (thread_id, address, date, date_sent, read, type, body, receipt_timestamp)
+        values (:thread_id, :address, :date, :date_sent, :read, :type, :body, :receipt_timestamp)"""
 insert_mms_query = """insert into mms (thread_id, date, date_received, msg_box, read, body, part_count, address, m_type, subscription_id, st) 
             values (:thread_id, :date, :date_received, :msg_box, :read, :body, :part_count, :address, :m_type, :subscription_id, :st)"""
 insert_part_query = """insert into part (mid, seq, ct, data_size, file_name, unique_id, caption, transform_properties)
@@ -238,10 +238,6 @@ if args.merge:
                 cursor.execute(f"delete from part where mid = '{mms_id}'")
                 cursor.execute(f"delete from mms where _id = '{mms_id}'")
             cursor.execute(f"delete from sms where address = '{add}' and date = '{r['date']}';")
-            # cursor.execute(f"select _id from sms where address = '{add}' and date = '{r['date']}';")
-            # sid = cursor.fetchall()
-            # if len(sid):
-            #     logging.info(f"""wanted to delete sid '{sid}', address '{add}', date '{r['date']}'""")
         i += 1
         if i % 1000 == 0:
             conn.commit()
@@ -254,12 +250,6 @@ logging.info("inserting mms")
 for r in mmses:
     thread_id = get_or_make_thread(cursor, r)
     logging.debug(f"Writing MMS: {r}")
-    if r['type'] == 132 and r['part_length'] == 0 and r['msg_box'] == 20:
-        cursor.execute(
-            insert_sms_query,
-            (thread_id, r['address'], r['date'], r['date_sent'], r['read'], r['msg_box'], r['body'], r['date'])
-        )
-    # else: - recompining the signal backup at the end doesn't work when these are separated - put it in both?
     cursor.execute(
         insert_mms_query,
         (thread_id, r['date'], r['date_sent'], r['msg_box'], 1, r['body'], r['part_length'], r['address'], r['type'], r['subscription_id'], r['st']),
@@ -272,7 +262,6 @@ for r in mmses:
     for part in r['parts']:
         # skip smil - not sure if Signal undestand SMIL formatting
         if int(part.attrib.get("seq", 0)) != -1 and part.attrib.get("data"):
-            seq += 1
             logging.debug(f"  Working on mms {mms_id} part number {seq}")
             data = base64.b64decode(part.attrib["data"])
             data_size = len(data)
@@ -303,6 +292,7 @@ for r in mmses:
                     props
                 ),
             )
+            seq += 1
             cursor.execute("select max(_id) as part_id from part")
             rows = cursor.fetchall()
             part_id = rows[0][0]
@@ -345,7 +335,7 @@ for r in smses:
     logging.debug(f"Writing SMS: {r}")
     cursor.execute(
         insert_sms_query,
-        (r['thread_id'], r['address'], r['date'], r['date_sent'], r['read'], r['type'], r['body'])
+        (r['thread_id'], r['address'], r['date'], r['date_sent'], r['read'], r['type'], r['body'], r['date'])
     )
     i += 1
     if i % 1000 == 0:
