@@ -105,7 +105,7 @@ c) The Signal PIN number that you may have setup
 - [x] create recipient when not exist?
 - [x] have mms/sms appear as such in signal, not as signal messages
 - [x] handle group things so messages are associated to the sender/each recipient
-  - [~] Maybe import group/bulk texts as signal groups? Do we care? MMS group texts don't really function like a group chat in the real world from my experience
+  - [ ] ~~Maybe import group/bulk texts as signal groups? Do we care? MMS group texts don't really function like a group chat in the real world from my experience~~
 - [x] Currently, imported audio messages don't play - have seen some comments on signalbackup-tools that indicate it may not be to do with our import?
 - [ ] the thread snippet sometimes shows an old message - might be worth adding something at the end to deal with that?
 - [ ] add the sha256 hash to the data_hash field in part table
