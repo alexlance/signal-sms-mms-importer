@@ -202,7 +202,7 @@ i = 0
 
 if args.merge:
     logging.info("deleting existing mms to replace")
-    cursor.execute("create index sms_del on sms (address, date);")
+    #cursor.execute("create index sms_del on sms (address, date);")
     for r in mmses:
         if not len(r.get('add_list')):
             r['add_list'].append(r.get('address'))
@@ -229,13 +229,13 @@ if args.merge:
                         pass
                 cursor.execute(f"delete from part where mid = '{mms_id}'")
                 cursor.execute(f"delete from mms where _id = '{mms_id}'")
-            cursor.execute(f"delete from sms where address = '{add}' and date = '{r['date']}';")
+            #cursor.execute(f"delete from sms where address = '{add}' and date = '{r['date']}';")
         i += 1
         if i % 1000 == 0:
             conn.commit()
     else:
         conn.commit()
-        cursor.execute("drop index sms_del;")
+        #cursor.execute("drop index sms_del;")
 
 logging.info("inserting mms")
 
