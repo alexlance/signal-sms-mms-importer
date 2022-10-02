@@ -7,9 +7,9 @@ import logging
 import argparse
 
 parser = argparse.ArgumentParser(
-                    description = 'imports SMS and MMS messages in to a Signal Backup')
+    description='imports SMS and MMS messages in to a Signal Backup')
 
-parser.add_argument('args',nargs='*')
+parser.add_argument('args', nargs='*')
 parser.add_argument('--input', '-i', help='input sms backup xml file')
 parser.add_argument('--output', '-o', help='exported signal backup to update')
 parser.add_argument('--merge', '-m', dest='merge', action='store_true', help="optional argument, to delete any instances of the same sms/mms prior to inserting. useful if this isn't your first time")
@@ -24,6 +24,7 @@ logging.basicConfig(filename='signalsmsmmsimport.log', filemode='a', format='%(a
 
 logging.info(f"input file is '{input}', output file is '{output}'")
 
+
 def get_contacts(cursor):
     cursor.execute("select _id, phone, system_display_name from recipient")
     contacts = cursor.fetchall()
@@ -35,6 +36,7 @@ def get_contacts(cursor):
             contacts_by_number[c[1].replace("+61", "0").replace("-", "")] = c[0]
     return contacts_by_number
 
+
 def get_groups(cursor):
     cursor.execute("select _id, group_id, recipient_id, members from group")
     groups = cursor.fetchall()
@@ -45,6 +47,7 @@ def get_groups(cursor):
         groups_by_number['recipient_id'] = g[2]
         groups_by_number['members'] = g[3]
     return groups_by_number
+
 
 def get_parts(r):
     rtn = []
@@ -59,8 +62,10 @@ def get_parts(r):
 
 
 def get_addrs(r):
-    #this is a list of addresses, type 151 is you, type 130 are other recipients, type 137 is the sender. this will be useful for groups (need to figure how signal marks the sender in a group) also usefu
-    #this returned list can be used to allocate messages to the sender of a group
+    # this is a list of addresses, type 151 is you, type 130 are other
+    # recipients, type 137 is the sender. this will be useful for groups (need
+    # to figure how signal marks the sender in a group) also useful
+    # this returned list can be used to allocate messages to the sender of a group
     rtn = []
     logging.debug("GETTING ADDRS:")
     for addrs in r.findall("addrs"):
@@ -68,13 +73,14 @@ def get_addrs(r):
             rtn.append(addr)
     return rtn
 
+
 def add_recipient(add, cursor):
     global contacts_by_number
     cursor.execute(f"""insert into recipient (phone, default_subscription_id, registered) values ("{add}", 1, 2)""")
     conn.commit()
     contacts_by_number = get_contacts(cursor)
-    contacts_by_number[add]
     return contacts_by_number[add]
+
 
 def get_or_make_thread(cursor, r):
     thread_id = False
@@ -109,12 +115,12 @@ mmses = []
 contacts_by_number = get_contacts(cursor)
 
 for r in root:
-    date_sent = r.attrib.get("date_sent","")
+    date_sent = r.attrib.get("date_sent", "")
     if date_sent in [0, "0", ""] or len(date_sent) < 13:
-        date_sent = r.attrib.get("date","")
+        date_sent = r.attrib.get("date", "")
     addrs = get_addrs(r)
     address = False
-    add = r.attrib["address"].replace("-", "").replace("+61","0")
+    add = r.attrib["address"].replace("-", "").replace("+61", "0")
     add_list = []
     if '~' in add:
         for a in sorted(add.split("~")):
@@ -127,7 +133,7 @@ for r in root:
         else:
             for addr in addrs:
                 if addr.items()[1][1] == '137':
-                    address = contacts_by_number[addr.items()[0][1].replace("-", "").replace("+61","0")]
+                    address = contacts_by_number[addr.items()[0][1].replace("-", "").replace("+61", "0")]
         add_list = [*set(add_list)]
     if not address:
         try:
@@ -136,7 +142,7 @@ for r in root:
             address = add_recipient(add, cursor)
     row = {}
     if r.tag == "sms":
-        #sms sent is type 87, sms received is type 20
+        # sms sent is type 87, sms received is type 20
         row['add_list'] = add_list
         row['address'] = address
         row['date'] = r.attrib["date"]
@@ -154,8 +160,8 @@ for r in root:
         text = ""
         for text_part in parts:
             if text_part.get("seq") == '0':
-                text = text_part.get("text","")
-                if text in ["null",""]:
+                text = text_part.get("text", "")
+                if text in ["null", ""]:
                     text = None
                 if text:
                     break
