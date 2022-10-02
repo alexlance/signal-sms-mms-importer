@@ -1,10 +1,21 @@
 import xml.etree.ElementTree as ET
 import os
+import sys
 import sqlite3
 import base64
 import time
 import logging
 import argparse
+import pkg_resources
+
+cur_version = pkg_resources.parse_version(str(sqlite3.sqlite_version))
+min_version = pkg_resources.parse_version("3.35")
+
+# the RETURNING syntax needs sqlite3 version >=3.35
+if cur_version < min_version:
+    print(f"Version of sqlite3 python library is too old, upgrade to {min_version}")
+    print("Try the Docker version for a predictable build environment")
+    sys.exit(1)
 
 parser = argparse.ArgumentParser(
     description='imports SMS and MMS messages in to a Signal Backup')
@@ -211,7 +222,7 @@ if args.merge:
             r['add_list'].append(r.get('address'))
         add_list = r.get('add_list')
         for add in add_list:
-            logging.info(f"Deleting mms to be replaced: {r['date']} / {add}")
+            logging.info(f"Deleting existing mms to be replaced: {r['date']} / {add}")
             cursor.execute(f"select _id as mms_id from mms where address = {add} and date = {r['date']}")
             result = cursor.fetchall()
             for row in result:
