@@ -205,13 +205,13 @@ insert_part_query = """insert into part (mid, seq, ct, pending_push, data_size, 
 i = 0
 
 if args.merge:
-    logging.info("deleting existing mms to replace")
-    #cursor.execute("create index sms_del on sms (address, date);")
+    logging.info("Deleting existing mms to replace")
     for r in mmses:
         if not len(r.get('add_list')):
             r['add_list'].append(r.get('address'))
         add_list = r.get('add_list')
         for add in add_list:
+            logging.info(f"Deleting mms to be replaced: {r['date']} / {add}")
             cursor.execute(f"select _id as mms_id from mms where address = {add} and date = {r['date']}")
             result = cursor.fetchall()
             for row in result:
@@ -222,24 +222,24 @@ if args.merge:
                     part_id = part[0]
                     unique_id = part[1]
                     fname = os.path.join(output, f"Attachment_{part_id}_{unique_id}.bin")
-                    fname2 = os.path.join(output,f"Attachment_{part_id}_{unique_id}.sbf")
+                    fname2 = os.path.join(output, f"Attachment_{part_id}_{unique_id}.sbf")
                     try:
                         os.remove(fname)
-                    except:
+                    except Exception:
                         pass
                     try:
                         os.remove(fname2)
-                    except:
+                    except Exception:
                         pass
                 cursor.execute(f"delete from part where mid = '{mms_id}'")
                 cursor.execute(f"delete from mms where _id = '{mms_id}'")
-            #cursor.execute(f"delete from sms where address = '{add}' and date = '{r['date']}';")
         i += 1
         if i % 1000 == 0:
             conn.commit()
-    else:
+    try:
         conn.commit()
-        #cursor.execute("drop index sms_del;")
+    except Exception:
+        pass
 
 logging.info("inserting mms")
 
@@ -301,40 +301,37 @@ LENGTH:uint32:{data_size}"
     i += 1
     if i % 1000 == 0:
         conn.commit()
-else:
+try:
     conn.commit()
+except Exception:
+    pass
 
 logging.info("mms inserted")
 
 if args.merge:
-    logging.info(f"Deleting sms to be inserted")
-    cursor.execute("create index sms_del on sms (address, date);")
+    logging.info(f"Deleting existing sms to be replaced")
+    cursor.execute("create index if not exists sms_del on sms (address, date);")
     for r in smses:
+        logging.info(f"Deleting existing sms to be replaced: {r['date']} / {r['address']}")
         cursor.execute(f"delete from sms where address = '{r['address']}' and date = '{r['date']}';")
         i += 1
         if i % 1000 == 0:
             conn.commit()
-    else:
-        conn.commit()
-        cursor.execute("drop index sms_del;")
+    conn.commit()
+    cursor.execute("drop index if exists sms_del;")
 
 logging.info("inserting sms")
 
 for r in smses:
     r['thread_id'] = get_or_make_thread(cursor=cursor, r=r)
     logging.debug(f"Writing SMS: {r}")
-    cursor.execute(
-        insert_sms_query,
-        (r['thread_id'], r['address'], r['date'], r['date_sent'], r['read'], r['type'], r['body'], r['date'])
-    )
+    cursor.execute(insert_sms_query, r)
     i += 1
     if i % 1000 == 0:
         conn.commit()
-else:
-    conn.commit()
+conn.commit()
 
 logging.info("sms inserted")
-
 logging.info("updating threads counts")
 
 cursor.execute('select _id from thread')
@@ -348,8 +345,7 @@ for thread in threads:
     i += 1
     if i % 1000 == 0:
         conn.commit()
-else:
-    conn.commit()
+conn.commit()
 
 logging.info("thread counts updated")
 
