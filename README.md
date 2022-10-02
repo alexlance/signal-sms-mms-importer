@@ -14,8 +14,8 @@ SMS Backup and Restore XML file imported.
 ## Caveats
 
  * Only tested on Android
- * The commands below were run on Linux
- * Some MMSes that were audio only, don't seem to make it across
+ * The commands below were run on Linux, have also tested Windows equivalents
+ * ~~Some MMSes that were audio only, don't seem to make it across~~ *this seems to be resolved by the fork*
  * As long as you backup Signal before you begin and you have written down the 30 digit passphrase, and you still have your phone number for identity verification, and you still remember your Signal Pin, then it shouldn't be too hard to get things back to normal if this procedure doesn't work out for you
 
 ## Instructions
@@ -36,12 +36,15 @@ Signal -> Chats -> Backups -> Local Backup
 
   # signal 30 digit backup passphrase
   key=123451234512345123451234512345
+  #set key=123451234512345123451234512345 #Windows
 
   # create a directory to store the dissected Signal backup
   mkdir bits
 
   # use signalbackup-tools to dissect the Signal backup
   ./signalbackup-tools ./signal-2022-06-10-17-00-00.backup ${key} --output bits/
+  
+  # .\signalbackup-tools .\signal-2022-06-10-17-00-00.backup %key% --output .\bits #Windows
 
 ```
 
@@ -50,7 +53,8 @@ Signal -> Chats -> Backups -> Local Backup
 5. Run the script in this repo over the XML file:
 
 ```
-python3 sms-mms-import-to-signal.py sms-20220611130220.xml bits/
+python3 sms-mms-import-to-signal.py sms-20220611130220.xml bits
+python3 --input sms-mms-import-to-signal.py --output sms-20220611130220.xml bits -m -v 
 ```
 
 6. Use signalbackup-tools to wrap up the new Signal backup file:
@@ -58,6 +62,7 @@ python3 sms-mms-import-to-signal.py sms-20220611130220.xml bits/
 ```
 # note: file suffix of signal backup files *must* be ".backup"
 signalbackup-tools bits/ --output ./signal.backup --opassword ${key}
+# .\signalbackup-tools .\bits\ --output .\signal.backup --opassword %key% #Windows
 ```
 
 7. Transfer the signal.backup file back to your phone
@@ -80,3 +85,27 @@ c) The Signal PIN number that you may have setup
 * Feel free to shout out with any issues problems in github issues
 * Make sure to go and give signalbackup-tools some kudos as they do most of the heavy lifting
 * Wonder if we could move whatsapp messages using a similar procedure... ?
+
+## Fork additions
+* Adapted import to properly handle RCS messages sent/received
+* Imported SMS/MMS look like SMS/MMS in signal, rather than signal messages
+* Added 'add recipient' function, to import all SMS/MMS rather than only those with contacts
+* Modified from tuples to dictionaries for readability
+* Switched from print to logger for capturing logs/outputs
+* Modified thread count logic to include SMS & MMS, aggregated at the end
+* Added merge function, to reprocess the import of a previously imported SMS/MMS XML backup
+* Added arguments for input & output, but maintained positional for compatability
+* Added merge & verbose arguments for finer control
+* Various other readability, performance, sql updates to better mimic how Signal loads SMS/MMS into it's databases
+
+### To do
+- [x] finish mms/rcs message import correction
+- [x] make them dictionaries instead of lists where possible (readability/performance)
+- [x] make a reliable equivalent to oracle merge? delete/add? update? optional arguments/yesno prompts to ask about the 'delete equivalent things' prcoess?
+- [x] create recipient when not exist?
+- [x] have mms/sms appear as such in signal, not as signal messages
+- [x] handle group things so messages are associated to the sender/each recipient
+  - [ ] ~~Maybe import group/bulk texts as signal groups? Do we care? MMS group texts don't really function like a group chat in the real world from my experience~~
+- [x] Currently, imported audio messages don't play - have seen some comments on signalbackup-tools that indicate it may not be to do with our import?
+- [ ] the thread snippet sometimes shows an old message - might be worth adding something at the end to deal with that?
+- [ ] add the sha256 hash to the data_hash field in part table
