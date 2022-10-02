@@ -344,7 +344,7 @@ for thread in threads:
     sms_count = cursor.execute(f'select count(*) from sms where thread_id = {thread_id}').fetchone()[0]
     mms_count = cursor.execute(f'select count(*) from mms where thread_id = {thread_id}').fetchone()[0]
     logging.debug(f'updating thread_id {thread_id}, sms_count {sms_count} + mms_count {mms_count} = {sms_count + mms_count} total')
-    cursor.execute(f'update thread set message_count = {sms_count + mms_count}')
+    cursor.execute(f'update thread set message_count = {sms_count + mms_count} where _id = {thread_id}')
     i += 1
     if i % 1000 == 0:
         conn.commit()
