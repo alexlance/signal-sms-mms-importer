@@ -15,8 +15,11 @@ SMS Backup and Restore XML file imported.
 
  * Only tested on Android
  * The commands below were run on Linux, have also tested Windows equivalents
- * ~~Some MMSes that were audio only, don't seem to make it across~~ *this seems to be resolved by the fork*
- * As long as you backup Signal before you begin and you have written down the 30 digit passphrase, and you still have your phone number for identity verification, and you still remember your Signal Pin, then it shouldn't be too hard to get things back to normal if this procedure doesn't work out for you
+ * Before you begin make sure you:
+     - backup Signal before you begin
+     - have written down the 30 digit backup code
+     - still have your phone number for identity verification
+     - still remember your numerical Signal Pin
 
 ## Instructions
 
@@ -43,7 +46,6 @@ Signal -> Chats -> Backups -> Local Backup
 
   # use signalbackup-tools to dissect the Signal backup
   ./signalbackup-tools ./signal-2022-06-10-17-00-00.backup ${key} --output bits/
-  
   # .\signalbackup-tools .\signal-2022-06-10-17-00-00.backup %key% --output .\bits #Windows
 
 ```
@@ -54,7 +56,7 @@ Signal -> Chats -> Backups -> Local Backup
 
 ```
 python3 sms-mms-import-to-signal.py sms-20220611130220.xml bits
-python3 --input sms-mms-import-to-signal.py --output sms-20220611130220.xml bits -m -v 
+python3 sms-mms-import-to-signal.py --input sms-20220611130220.xml --output bits -m -v
 ```
 
 6. Use signalbackup-tools to wrap up the new Signal backup file:
@@ -86,7 +88,7 @@ c) The Signal PIN number that you may have setup
 * Make sure to go and give signalbackup-tools some kudos as they do most of the heavy lifting
 * Wonder if we could move whatsapp messages using a similar procedure... ?
 
-## Fork additions
+## Additions from github user @wearepariah:
 * Adapted import to properly handle RCS messages sent/received
 * Imported SMS/MMS look like SMS/MMS in signal, rather than signal messages
 * Added 'add recipient' function, to import all SMS/MMS rather than only those with contacts
