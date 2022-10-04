@@ -222,7 +222,7 @@ if args.merge:
             r['add_list'].append(r.get('address'))
         add_list = r.get('add_list')
         for add in add_list:
-            logging.info(f"Deleting existing mms to be replaced: {r['date']} / {add}")
+            logging.debug(f"Deleting existing mms to be replaced: {r['date']} / {add}")
             cursor.execute(f"select _id as mms_id from mms where address = {add} and date = {r['date']}")
             result = cursor.fetchall()
             for row in result:
@@ -320,10 +320,10 @@ except Exception:
 logging.info("mms inserted")
 
 if args.merge:
-    logging.info(f"Deleting existing sms to be replaced")
+    logging.info("Deleting existing sms to be replaced")
     cursor.execute("create index if not exists sms_del on sms (address, date);")
     for r in smses:
-        logging.info(f"Deleting existing sms to be replaced: {r['date']} / {r['address']}")
+        logging.debug(f"Deleting existing sms to be replaced: {r['date']} / {r['address']}")
         cursor.execute(f"delete from sms where address = '{r['address']}' and date = '{r['date']}';")
         i += 1
         if i % 1000 == 0:
