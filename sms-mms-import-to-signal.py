@@ -62,14 +62,11 @@ def get_groups(cursor):
 
 def get_parts(r):
     rtn = []
-    part_length = 0
     logging.debug("GETTING PARTS:")
     for parts in r.findall("parts"):
         for part in parts.findall("part"):
-            if int(part.attrib.get("seq", 0)) != -1 and part.attrib.get("data"):
-                part_length += 1
             rtn.append(part)
-    return part_length, rtn
+    return rtn
 
 
 def get_addrs(r):
@@ -95,15 +92,15 @@ def add_recipient(add, cursor):
 
 def get_or_make_thread(cursor, r):
     thread_id = False
-    cursor.execute(f"select _id from thread where thread_recipient_id = '{r['address']}'")
+    cursor.execute(f"select _id from thread where recipient_id = '{r['recipient_id']}'")
     rows = cursor.fetchall()
     if len(rows):
         thread_id = rows[0][0]
     if not thread_id:
         logging.debug(f"Creating new thread: {r}")
         cursor.execute(
-            "insert into thread (date, thread_recipient_id, message_count, snippet) values (?, ?, ?, ?) returning _id",
-            (r['date'], r['address'], 1, str(r['body'])[0:100]),
+            "insert into thread (date, recipient_id, snippet) values (?, ?, ?) returning _id",
+            (r['date_sent'], r['recipient_id'], str(r['body'])[0:100]),
         )
         (thread_id, ) = cursor.fetchone()
     return thread_id
@@ -122,6 +119,7 @@ cursor = conn.cursor()
 smses = []
 mmses = []
 contacts_by_number = get_contacts(cursor)
+# cont[phone] = _id  (recipient_id!)
 
 for r in root:
     date_sent = r.attrib.get("date_sent", "")
@@ -153,8 +151,7 @@ for r in root:
     if r.tag == "sms":
         # sms sent is type 87, sms received is type 20
         row['add_list'] = add_list
-        row['address'] = address
-        row['date'] = r.attrib["date"]
+        row['recipient_id'] = address
         row['date_sent'] = date_sent
         row['read'] = 1  # "read"
         row['type'] = 87 if str(r.attrib["type"]) == "2" else 20
@@ -165,7 +162,7 @@ for r in root:
     elif r.tag == "mms":
         # magic mms numbers, 128 for messages we've sent, 132 for messages we've received
         # for msg_box, 87 is sent inc text, 23 is sent no text, 20 is received with or without text
-        part_length, parts = get_parts(r)
+        parts = get_parts(r)
         text = ""
         for text_part in parts:
             if text_part.get("seq") == '0':
@@ -175,28 +172,19 @@ for r in root:
                 if text:
                     break
         row['add_list'] = add_list
-        row['address'] = address
-        row['date'] = r.attrib["date"]
+        row['recipient_id'] = address
         row['date_sent'] = date_sent
         row['read'] = 1  # "read"
         row['status'] = -1  # "status",
-        row['type'] = 128 if str(r.attrib["msg_box"]) == "2" else 132
-        row['subscription_id'] = -1 if str(r.attrib["msg_box"]) == "2" else 1
-        row['st'] = None if str(r.attrib["msg_box"]) == "2" else 1
+        row['type'] = 10485783
+        row['subscription_id'] = -1
+        row['st'] = None
         row['body'] = r.attrib.get("body", text)
-        if row['type'] == 128:
-            if row['body'] == '':
-                row['msg_box'] = 23
-            else:
-                row['msg_box'] = 87
-        elif row['type'] == 132:
-            row['msg_box'] = 20
         row['parts'] = parts
-        row['part_length'] = part_length
         row['addrs'] = addrs
         if len(row['add_list']) and row['type'] == 128:
             for add in row['add_list']:
-                row['address'] = add
+                row['recipient_id'] = add
                 mmses.append(row.copy())
         else:
             mmses.append(row)
@@ -206,10 +194,10 @@ logging.info(f"Found {str(len(mmses))} mms")
 
 time.sleep(3)
 
-insert_sms_query = """insert into sms (thread_id, address, date, date_sent, read, type, body, receipt_timestamp)
-        values (:thread_id, :address, :date, :date_sent, :read, :type, :body, :date)"""
-insert_mms_query = """insert into mms (thread_id, date, date_received, msg_box, read, body, part_count, address, m_type, subscription_id, st)
-            values (:thread_id, :date, :date_sent, :msg_box, :read, :body, :part_length, :address, :type, :subscription_id, :st) returning _id"""
+insert_sms_query = """insert into sms (thread_id, recipient_id, date_sent, date_received, read, type, body, receipt_timestamp)
+        values (:thread_id, :recipient_id, :date_sent, :date_sent, :read, :type, :body, :date_sent)"""
+insert_mms_query = """insert into mms (thread_id, date_sent, date_received, read, body, recipient_id, type, subscription_id, st)
+            values (:thread_id, :date_sent, :date_sent, :read, :body, :recipient_id, :type, :subscription_id, :st) returning _id"""
 insert_part_query = """insert into part (mid, seq, ct, pending_push, data_size, file_name, unique_id, caption, transform_properties)
             values (:mid, :seq, :ct, :pending_push, :data_size, :file_name, :unique_id, :caption, :transform_properties) returning _id"""
 
@@ -219,11 +207,11 @@ if args.merge:
     logging.info("Deleting existing mms to replace")
     for r in mmses:
         if not len(r.get('add_list')):
-            r['add_list'].append(r.get('address'))
+            r['add_list'].append(r.get('recipient_id'))
         add_list = r.get('add_list')
         for add in add_list:
-            logging.debug(f"Deleting existing mms to be replaced: {r['date']} / {add}")
-            cursor.execute(f"select _id as mms_id from mms where address = {add} and date = {r['date']}")
+            logging.debug(f"Deleting existing mms to be replaced: {r['date_sent']} / {add}")
+            cursor.execute(f"select _id as mms_id from mms where recipient_id = {add} and date_sent = {r['date_sent']}")
             result = cursor.fetchall()
             for row in result:
                 mms_id = row[0]
@@ -321,10 +309,10 @@ logging.info("mms inserted")
 
 if args.merge:
     logging.info("Deleting existing sms to be replaced")
-    cursor.execute("create index if not exists sms_del on sms (address, date);")
+    cursor.execute("create index if not exists sms_del on sms (recipient_id, date_sent);")
     for r in smses:
-        logging.debug(f"Deleting existing sms to be replaced: {r['date']} / {r['address']}")
-        cursor.execute(f"delete from sms where address = '{r['address']}' and date = '{r['date']}';")
+        logging.debug(f"Deleting existing sms to be replaced: {r['date_sent']} / {r['recipient_id']}")
+        cursor.execute(f"delete from sms where recipient_id = '{r['recipient_id']}' and date_sent = '{r['date_sent']}';")
         i += 1
         if i % 1000 == 0:
             conn.commit()
@@ -343,23 +331,6 @@ for r in smses:
 conn.commit()
 
 logging.info("sms inserted")
-logging.info("updating threads counts")
-
-cursor.execute('select _id from thread')
-threads = cursor.fetchall()
-for thread in threads:
-    thread_id = thread[0]
-    sms_count = cursor.execute(f'select count(*) from sms where thread_id = {thread_id}').fetchone()[0]
-    mms_count = cursor.execute(f'select count(*) from mms where thread_id = {thread_id}').fetchone()[0]
-    logging.debug(f'updating thread_id {thread_id}, sms_count {sms_count} + mms_count {mms_count} = {sms_count + mms_count} total')
-    cursor.execute(f'update thread set message_count = {sms_count + mms_count} where _id = {thread_id}')
-    i += 1
-    if i % 1000 == 0:
-        conn.commit()
-conn.commit()
-
-logging.info("thread counts updated")
-
 conn.commit()
 cursor.close()
 
