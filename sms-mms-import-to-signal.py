@@ -176,9 +176,9 @@ for r in root:
         row['date_sent'] = date_sent
         row['read'] = 1  # "read"
         row['status'] = -1  # "status",
-        row['type'] = 87 if str(r.attrib["type"]) == "2" else 20
-        row['subscription_id'] = -1
-        row['st'] = None
+        row['type'] = 128 if str(r.attrib["msg_box"]) == "2" else 132
+        row['subscription_id'] = -1 if str(r.attrib["msg_box"]) == "2" else 1
+        row['st'] = None if str(r.attrib["msg_box"]) == "2" else 1
         row['body'] = r.attrib.get("body", text)
         row['parts'] = parts
         row['addrs'] = addrs
