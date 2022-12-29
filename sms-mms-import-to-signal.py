@@ -176,7 +176,7 @@ for r in root:
         row['date_sent'] = date_sent
         row['read'] = 1  # "read"
         row['status'] = -1  # "status",
-        row['type'] = 10485783
+        row['type'] = 87 if str(r.attrib["type"]) == "2" else 20
         row['subscription_id'] = -1
         row['st'] = None
         row['body'] = r.attrib.get("body", text)
