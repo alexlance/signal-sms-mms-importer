@@ -36,18 +36,22 @@ Signal -> Chats -> Backups -> Local Backup
 ```
   # Install signalbackup-tools
   git clone https://github.com/bepaald/signalbackup-tools ... (follow their directions for installation)
+  # On Windows, download binary from https://github.com/bepaald/signalbackup-tools/releases and put in same folder as .backup
 
-  # signal 30 digit backup passphrase
+  # Signal 30 digit backup passphrase
   key=123451234512345123451234512345
-  #set key=123451234512345123451234512345 #Windows
+  # Windows version of the last command:
+  # set key=123451234512345123451234512345
 
-  # create a directory to store the dissected Signal backup
+  # Create a directory to store the dissected Signal backup
   mkdir bits
+  # Windows version of the last command:
+  # md bits
 
-  # use signalbackup-tools to dissect the Signal backup
+  # Use signalbackup-tools to dissect the Signal backup
   ./signalbackup-tools ./signal-2022-06-10-17-00-00.backup ${key} --output bits/
-  # .\signalbackup-tools .\signal-2022-06-10-17-00-00.backup %key% --output .\bits #Windows
-
+  # Windows version of the last command:
+  # signalbackup-tools_win.exe -i signal-2022-06-10-17-00-00.backup -o bits -p %key%
 ```
 
 4. Generate an SMS Backup and Restore (SyncTech) XML file on your phone and transfer that to a computer. Ensure the backup includes SMS and MMS, if that's what you want to import into Signal.
@@ -64,19 +68,18 @@ python3 sms-mms-import-to-signal.py --input sms-20220611130220.xml --output bits
 ```
 # note: file suffix of signal backup files *must* be ".backup"
 signalbackup-tools bits/ --output ./signal.backup --opassword ${key}
-# .\signalbackup-tools .\bits\ --output .\signal.backup --opassword %key% #Windows
+# Windows version of the last command:
+# signalbackup-tools_win.exe bits --output signal.backup --opassword %key%
 ```
 
 7. Transfer the signal.backup file back to your phone
 
 8. Delete Signal from your phone (only if you're 100% confident that you can use your original backup if things don't work!)
 
-9. Reinstall Signal, it'll ask you if you've got a backup file that you want to restore from. You
-will need:
-
-a) The 30 digit passcode
-b) A phone number that you can receive their validation code on
-c) The Signal PIN number that you may have setup
+9. Reinstall Signal, it'll ask you if you've got a backup file that you want to restore from. You will need:
+   1. The 30 digit passcode
+   2. A phone number that you can receive their validation code on
+   3. The Signal PIN number that you may have setup
 
 10. Open Signal, you should see all your SMS messages and MMS messages, as well as your normal Signal messages, all in Signal now.
 
